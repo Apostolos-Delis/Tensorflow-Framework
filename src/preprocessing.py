@@ -31,6 +31,7 @@ class Preprocesser(object):
         self._queue = None
         self._tqdm = None
         self.num_threads = num_threads
+        self._lock = threading.Lock()
         
 
     def convert_tif_to_np(self, data_dir: str):
@@ -58,10 +59,10 @@ class Preprocesser(object):
         files = glob.glob(data_dir + extension)
         if files == []: 
             raise FileNotFoundError(f"Couldn't locate any .tif files from {data_dir}")
-        self._tqdm = tqdm(total=len(files))
         self._queue = Queue() 
 
-        print(f"{len(files)} .tif files identified, creating {self.num_threads} threads.")
+        print(f"Located {len(files)} .tif files, creating {self.num_threads} threads.")
+        self._tqdm = tqdm(total=len(files))
         threads = list()
         for thread_id in range(self.num_threads):
             t = threading.Thread(target=self._tif_file_converter)
@@ -73,35 +74,28 @@ class Preprocesser(object):
         for f in files:
             self._queue.put(f)
 
-        for _ in range(self.num_threads):
-            self._queue.put(None)
-
         self._queue.join()
         list(map(lambda t: t.join(), threads))
+        self._tqdm = None
         print("Time Elapsed: {:.3f} seconds\n".format(time.time() - start))
          
     
     def _tif_file_converter(self):
         while True:
             tif_file = self._queue.get()
-            if tif_file is None:
-                break
+            # print(tif_file, self._queue.qsize())
 
             img = Image.open(tif_file)
             np_image = np.array(img, dtype = np.float32)
             np.save(tif_file.replace('.tif','.npy'), np_image)   
 
+            with self._lock:
+                self._tqdm.update(1)
             self._queue.task_done()
-            self._tqdm.update(1)
+            if self._queue.empty():
+                break
 
 
 if __name__ == "__main__":
-    p = Preprocesser()
+    p = Preprocesser(num_threads=15)
     p.convert_tif_to_np("tif_images")
-    exit(0)
-    
-    files = glob.glob('tif_images/*.tif')
-    for x in tqdm(files):
-        img = Image.open(x)
-        image = np.array(img, dtype = np.float32)
-        np.save(x.replace('.tif','.npy'), image)
