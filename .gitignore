@@ -5,4 +5,5 @@ data/
 **/*.tif
 **/*.mat
 **/*.npy
-
+**/tif_images
+**/.DS_Store
